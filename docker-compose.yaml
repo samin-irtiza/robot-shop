@@ -1,0 +1,234 @@
+version: '3'
+services:
+  mongodb:
+    build:
+      context: ./mongo
+      dockerfile: ./mongo/Dockerfile
+    image: rs-mongodb
+    networks:
+      - robot-shop
+    logging: &logging
+      driver: "json-file"
+      options:
+        max-size: "25m"
+        max-file: "2"
+  redis:
+    image: redis:6.2-alpine
+    networks:
+      - robot-shop
+    logging:
+      <<: *logging
+  rabbitmq:
+    image: rabbitmq:3.8-management-alpine
+    networks:
+      - robot-shop
+    logging:
+      <<: *logging
+  catalogue:
+    build:
+      context: catalogue
+    image: ${REPO}/rs-catalogue:${TAG}
+    depends_on:
+      - mongodb
+    networks:
+      - robot-shop
+    healthcheck:
+      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    logging:
+      <<: *logging
+  user:
+    build:
+      context: user
+    image: ${REPO}/rs-user:${TAG}
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - robot-shop
+    healthcheck:
+      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    logging:
+      <<: *logging
+  cart:
+    build:
+      context: cart
+    image: ${REPO}/rs-cart:${TAG}
+    depends_on:
+      - redis
+    networks:
+      - robot-shop
+    healthcheck:
+      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    logging:
+      <<: *logging
+  mysql:
+    build:
+      context: mysql
+    image: ${REPO}/rs-mysql-db:${TAG}
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - robot-shop
+    logging:
+      <<: *logging
+  shipping:
+    build:
+      context: ./shipping
+      dockerfile: ./shipping/Dockerfile
+    image: rs-shipping
+    container_name: rs-shipping
+    environment:
+      - OTEL_SERVICE_NAME=shipping
+      - OTEL_TRACES_EXPORTER=jaeger
+      - OTEL_LOGS_EXPORTER=none
+      - OTEL_METRICS_EXPORTER=prometheus
+        #  - OTEL_EXPORTER_PROMETHEUS_HOST=${PROMETHEUS_SERVICE_HOST}
+        #  - OTEL_EXPORTER_PROMETHEUS_PORT=${PROMETHEUS_SERVICE_PORT}
+      - OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
+      - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14250
+    depends_on:
+      - mysql
+      - jaeger
+    networks:
+      - robot-shop
+    healthcheck:
+      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    logging:
+      <<: *logging
+  prometheus:
+    image: ${PROMETHEUS_IMAGE}
+    container_name: prometheus
+    command:
+      - --web.console.templates=/etc/prometheus/consoles
+      - --web.console.libraries=/etc/prometheus/console_libraries
+      - --storage.tsdb.retention.time=1h
+      - --config.file=/etc/prometheus/prometheus-config.yaml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+      - --web.route-prefix=/
+      - --enable-feature=exemplar-storage
+      - --enable-feature=otlp-write-receiver
+    volumes:
+      - ./prometheus/prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_SERVICE_PORT}:${PROMETHEUS_SERVICE_PORT}"
+    networks:
+      - robot-shop
+    logging: *logging
+
+  ratings:
+    build:
+      context: ratings
+    image: ${REPO}/rs-ratings:${TAG}
+    environment:
+      APP_ENV: prod
+    networks:
+      - robot-shop
+    depends_on:
+      - mysql
+    healthcheck:
+      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost/_health"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    logging:
+      <<: *logging
+  jaeger:
+    image: ${JAEGERTRACING_IMAGE}
+    container_name: jaeger
+    command:
+      - "--memory.max-traces=5000"
+      - "--query.base-path=/jaeger/ui"
+ #     - "--prometheus.server-url=http://${PROMETHEUS_ADDR}"
+ #     - "--prometheus.query.normalize-calls=true"
+ #     - "--prometheus.query.normalize-duration=true"
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+    restart: unless-stopped
+    networks:
+      - robot-shop
+    ports:
+      - "${JAEGER_SERVICE_PORT}"         # Jaeger UI
+      - "${OTEL_COLLECTOR_PORT_GRPC}"
+        #    environment:
+        #      - METRICS_STORAGE_TYPE=prometheus
+    logging: *logging
+
+  payment:
+    build:
+      context: payment
+    image: ${REPO}/rs-payment:${TAG}
+    depends_on:
+      - rabbitmq
+    networks:
+      - robot-shop
+    healthcheck:
+      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    # Uncomment to change payment gateway
+    #environment:
+      #PAYMENT_GATEWAY: "https://www.worldpay.com"
+    logging:
+      <<: *logging
+  dispatch:
+    build:
+      context: dispatch
+    image: ${REPO}/rs-dispatch:${TAG}
+    depends_on:
+      - rabbitmq
+    networks:
+      - robot-shop
+    logging:
+      <<: *logging
+  web:
+    build:
+      context: web
+      args:
+        # agent key to download tracing libs
+        KEY: ${INSTANA_AGENT_KEY}
+    image: ${REPO}/rs-web:${TAG}
+    depends_on:
+      - catalogue
+      - user
+      - shipping
+      - payment
+    ports:
+      - "8080:8080"
+    networks:
+      - robot-shop
+    healthcheck:
+      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/" ]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    # Uncomment to enable Instana EUM
+    # environment:
+      # INSTANA_EUM_KEY: <your eum key>
+      # INSTANA_EUM_REPORTING_URL: <your reporting url>
+    logging:
+      <<: *logging
+
+networks:
+  robot-shop:
+
