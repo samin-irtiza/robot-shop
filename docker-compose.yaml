@@ -2,9 +2,10 @@ version: '3'
 services:
   mongodb:
     build:
-      context: ./mongo
-      dockerfile: ./mongo/Dockerfile
-    image: rs-mongodb
+      context: mongo
+      dockerfile: Dockerfile
+      tags: 
+        - ${REPO}/rs-mongodb:${TAG}
     networks:
       - robot-shop
     logging: &logging
@@ -27,7 +28,9 @@ services:
   catalogue:
     build:
       context: catalogue
-    image: ${REPO}/rs-catalogue:${TAG}
+      dockerfile: Dockerfile
+      tags: 
+        - ${REPO}/rs-catalogue:${TAG}
     depends_on:
       - mongodb
     networks:
@@ -42,7 +45,9 @@ services:
   user:
     build:
       context: user
-    image: ${REPO}/rs-user:${TAG}
+      dockerfile: Dockerfile
+      tags: 
+        - ${REPO}/rs-user:${TAG}
     depends_on:
       - mongodb
       - redis
@@ -58,7 +63,9 @@ services:
   cart:
     build:
       context: cart
-    image: ${REPO}/rs-cart:${TAG}
+      dockerfile: Dockerfile
+      tags: 
+        - ${REPO}/rs-cart:${TAG}
     depends_on:
       - redis
     networks:
@@ -73,7 +80,9 @@ services:
   mysql:
     build:
       context: mysql
-    image: ${REPO}/rs-mysql-db:${TAG}
+      dockerfile: Dockerfile
+      tags: 
+        - ${REPO}/rs-mysql-db:${TAG}
     cap_add:
       - NET_ADMIN
     networks:
@@ -82,9 +91,10 @@ services:
       <<: *logging
   shipping:
     build:
-      context: ./shipping
-      dockerfile: ./shipping/Dockerfile
-    image: rs-shipping
+      context: shipping
+      dockerfile: Dockerfile
+      tags: 
+        - ${REPO}/rs-shipping:${TAG}
     container_name: rs-shipping
     environment:
       - OTEL_SERVICE_NAME=shipping
@@ -107,6 +117,89 @@ services:
       retries: 3
     logging:
       <<: *logging
+
+  ratings:
+    build:
+      context: ratings
+      dockerfile: Dockerfile
+      tags: 
+        - ${REPO}/rs-ratings:${TAG}
+    environment:
+      APP_ENV: prod
+    networks:
+      - robot-shop
+    depends_on:
+      - mysql
+    healthcheck:
+      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost/_health"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    logging:
+      <<: *logging
+
+  payment:
+    build:
+      context: payment
+      dockerfile: Dockerfile
+      tags: 
+        - ${REPO}/rs-payment:${TAG}
+    depends_on:
+      - rabbitmq
+    networks:
+      - robot-shop
+    healthcheck:
+      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    # Uncomment to change payment gateway
+    #environment:
+      #PAYMENT_GATEWAY: "https://www.worldpay.com"
+    logging:
+      <<: *logging
+  dispatch:
+    build:
+      context: dispatch
+      dockerfile: Dockerfile
+      tags: 
+        - ${REPO}/rs-dispatch:${TAG}
+    depends_on:
+      - rabbitmq
+    networks:
+      - robot-shop
+    logging:
+      <<: *logging
+  web:
+    build:
+      context: web
+      dockerfile: Dockerfile
+      args:
+        # agent key to download tracing libs
+        KEY: ${INSTANA_AGENT_KEY}
+      tags: 
+        - ${REPO}/rs-web:${TAG}
+    depends_on:
+      - catalogue
+      - user
+      - shipping
+      - payment
+    ports:
+      - "8080:8080"
+    networks:
+      - robot-shop
+    healthcheck:
+      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/" ]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+    # Uncomment to enable Instana EUM
+    # environment:
+      # INSTANA_EUM_KEY: <your eum key>
+      # INSTANA_EUM_REPORTING_URL: <your reporting url>
+    logging:
+      <<: *logging
+  # --------------------------------------------------------- MONITORING TOOLS ---------------------------------------------------------------------
   prometheus:
     image: ${PROMETHEUS_IMAGE}
     container_name: prometheus
@@ -133,23 +226,6 @@ services:
       - robot-shop
     logging: *logging
 
-  ratings:
-    build:
-      context: ratings
-    image: ${REPO}/rs-ratings:${TAG}
-    environment:
-      APP_ENV: prod
-    networks:
-      - robot-shop
-    depends_on:
-      - mysql
-    healthcheck:
-      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost/_health"]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-    logging:
-      <<: *logging
   jaeger:
     image: ${JAEGERTRACING_IMAGE}
     container_name: jaeger
@@ -172,63 +248,6 @@ services:
         #    environment:
         #      - METRICS_STORAGE_TYPE=prometheus
     logging: *logging
-
-  payment:
-    build:
-      context: payment
-    image: ${REPO}/rs-payment:${TAG}
-    depends_on:
-      - rabbitmq
-    networks:
-      - robot-shop
-    healthcheck:
-      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-    # Uncomment to change payment gateway
-    #environment:
-      #PAYMENT_GATEWAY: "https://www.worldpay.com"
-    logging:
-      <<: *logging
-  dispatch:
-    build:
-      context: dispatch
-    image: ${REPO}/rs-dispatch:${TAG}
-    depends_on:
-      - rabbitmq
-    networks:
-      - robot-shop
-    logging:
-      <<: *logging
-  web:
-    build:
-      context: web
-      args:
-        # agent key to download tracing libs
-        KEY: ${INSTANA_AGENT_KEY}
-    image: ${REPO}/rs-web:${TAG}
-    depends_on:
-      - catalogue
-      - user
-      - shipping
-      - payment
-    ports:
-      - "8080:8080"
-    networks:
-      - robot-shop
-    healthcheck:
-      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/" ]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-    # Uncomment to enable Instana EUM
-    # environment:
-      # INSTANA_EUM_KEY: <your eum key>
-      # INSTANA_EUM_REPORTING_URL: <your reporting url>
-    logging:
-      <<: *logging
-
 networks:
   robot-shop:
 
