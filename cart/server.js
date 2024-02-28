@@ -6,6 +6,9 @@ instana({
         enabled: true
     }
 });
+const api = require('@opentelemetry/api');
+const tracer = require('./tracer')(('cart-grpc'));
+const grpc = require('@grpc/grpc-js');
 
 const redis = require('redis');
 const request = require('request');
@@ -82,6 +85,13 @@ app.get('/metrics', (req, res) => {
 
 // get cart with id
 app.get('/cart/:id', (req, res) => {
+    // const currentSpan = api.trace.getSpan(api.context.active());
+    // console.log(`traceid: ${currentSpan.spanContext().traceId}`);
+    const span = tracer.startSpan('server.js:sayHello()', {
+        kind: 1, // server
+        attributes: { id: req.params.id },
+      });
+    span.addEvent(`Getting cart with ID to ${req.params.id}`);
     redisClient.get(req.params.id, (err, data) => {
         if(err) {
             req.log.error('ERROR', err);
@@ -95,6 +105,7 @@ app.get('/cart/:id', (req, res) => {
             }
         }
     });
+    span.end();
 });
 
 // delete cart with id

@@ -98,13 +98,13 @@ services:
     container_name: rs-shipping
     environment:
       - OTEL_SERVICE_NAME=shipping
-      - OTEL_TRACES_EXPORTER=jaeger
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_GRPC}
       - OTEL_LOGS_EXPORTER=none
       - OTEL_METRICS_EXPORTER=prometheus
         #  - OTEL_EXPORTER_PROMETHEUS_HOST=${PROMETHEUS_SERVICE_HOST}
         #  - OTEL_EXPORTER_PROMETHEUS_PORT=${PROMETHEUS_SERVICE_PORT}
       - OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
-      - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14250
+      #- OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14250
     depends_on:
       - mysql
       - jaeger
@@ -248,6 +248,30 @@ services:
         #    environment:
         #      - METRICS_STORAGE_TYPE=prometheus
     logging: *logging
+  otelcol:
+    image: ${COLLECTOR_CONTRIB_IMAGE}
+    container_name: otelcol
+    hostname: otelcol
+    deploy:
+      resources:
+        limits:
+          memory: 125M
+    restart: unless-stopped
+    command: [ "--config=/etc/otelcol-config.yml", "--config=/etc/otelcol-config-extras.yml" ]
+    volumes:
+      - ./otelcollector/otelcol-config.yml:/etc/otelcol-config.yml
+      - ./otelcollector/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
+    ports:
+      - "${OTEL_COLLECTOR_PORT_GRPC}"
+      - "${OTEL_COLLECTOR_PORT_HTTP}"
+    depends_on:
+      - jaeger
+    logging: *logging
+    environment:
+      - ENVOY_PORT
+    networks:
+      - robot-shop
+
 networks:
   robot-shop:
 
