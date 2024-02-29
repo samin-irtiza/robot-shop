@@ -66,6 +66,9 @@ services:
       dockerfile: Dockerfile
       tags: 
         - ${REPO}/rs-cart:${TAG}
+    environment: 
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_GRPC}
+      - OTEL_TRACES_EXPORTER=otlp
     depends_on:
       - redis
     networks:
