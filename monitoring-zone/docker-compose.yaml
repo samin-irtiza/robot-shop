@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  jaeger:
+    image: jaegertracing/all-in-one
+    container_name: jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686" # Jaeger UI port
+      - "14268:14268"
+      - "4317"
+    networks:
+      - monitoring-zone
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    restart: unless-stopped
+    volumes:
+      - ./configurations/otel-collector-config.yaml:/etc/config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+    depends_on:
+      - jaeger
+    networks:
+      - monitoring-zone
+    command: ["--config=/etc/config.yaml"]
+
+networks:
+  monitoring-zone:
+    driver: bridge
+
