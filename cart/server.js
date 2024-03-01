@@ -68,11 +68,16 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 app.get('/health', (req, res) => {
+    const span = tracer.startSpan('Health Check', {
+        kind: 1, // server
+        attributes: { id: req.params.id },
+      });
     var stat = {
         app: 'OK',
         redis: redisConnected
     };
     res.json(stat);
+    span.end();
 });
 
 // Prometheus
