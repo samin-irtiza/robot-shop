@@ -15,6 +15,36 @@ const express = require('express');
 const pino = require('pino');
 const expPino = require('express-pino-logger');
 
+//----------------------------------------------------------------------------------------
+
+const opentelemetry = require('@opentelemetry/api');
+const { Resource } = require('@opentelemetry/resources');
+const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
+const { NodeTracerProvider } = require('@opentelemetry/sdk-trace-node');
+const { SimpleSpanProcessor } = require('@opentelemetry/sdk-trace-base');
+const { CollectorTraceExporter } = require('@opentelemetry/exporter-collector-grpc');
+
+// Initialize the tracer provider
+const provider = new NodeTracerProvider({
+    resource: new Resource({
+        [SemanticResourceAttributes.SERVICE_NAME]: 'user-service',
+    }),
+});
+
+// Configure the exporter to send spans to the OpenTelemetry Collector over gRPC
+const exporter = new CollectorTraceExporter({
+    serviceName: 'user-service',
+    url: 'otel-collector.badhansaha.tech:4317', // Replace with your collector's address
+});
+provider.addSpanProcessor(new SimpleSpanProcessor(exporter));
+
+// Register the provider
+provider.register();
+
+// Get tracer instance
+const tracer = opentelemetry.trace.getTracer('user-trace');
+
+//------------------------------------------------------------------------------------------
 // MongoDB
 var db;
 var usersCollection;
@@ -69,6 +99,7 @@ app.get('/health', (req, res) => {
 // use REDIS INCR to track anonymous users
 app.get('/uniqueid', (req, res) => {
     // get number from Redis
+    const parentSpan = tracer.startSpan('track-users');
     redisClient.incr('anonymous-counter', (err, r) => {
         if(!err) {
             res.json({
@@ -78,6 +109,7 @@ app.get('/uniqueid', (req, res) => {
             req.log.error('ERROR', err);
             res.status(500).send(err);
         }
+	parentSpan.end();
     });
 });
 

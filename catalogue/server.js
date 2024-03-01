@@ -22,7 +22,35 @@ const logger = pino({
 const expLogger = expPino({
     logger: logger
 });
+//------------------------------------------------------------------------------------
+const opentelemetry = require('@opentelemetry/api');
+const { Resource } = require('@opentelemetry/resources');
+const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
+const { NodeTracerProvider } = require('@opentelemetry/sdk-trace-node');
+const { SimpleSpanProcessor } = require('@opentelemetry/sdk-trace-base');
+const { CollectorTraceExporter } = require('@opentelemetry/exporter-collector-grpc');
 
+// Initialize the tracer provider
+const provider = new NodeTracerProvider({
+    resource: new Resource({
+        [SemanticResourceAttributes.SERVICE_NAME]: 'catalogue-service',
+    }),
+});
+
+// Configure the exporter to send spans to the OpenTelemetry Collector over gRPC
+const exporter = new CollectorTraceExporter({
+    serviceName: 'catalogue-service',
+    url: 'otel-collector.badhansaha.tech:4317', // Replace with your collector's address
+});
+provider.addSpanProcessor(new SimpleSpanProcessor(exporter));
+
+// Register the provider
+provider.register();
+
+// Get tracer instance
+const tracer = opentelemetry.trace.getTracer('catalogue-trace');
+
+//------------------------------------------------------------------------------------------
 // MongoDB
 var db;
 var collection;
@@ -80,6 +108,7 @@ app.get('/products', (req, res) => {
 
 // product by SKU
 app.get('/product/:sku', (req, res) => {
+    const parentSpan = tracer.startSpan('catalogue-list');
     if(mongoConnected) {
         // optionally slow this down
         const delay = process.env.GO_SLOW || 0;
@@ -100,6 +129,7 @@ app.get('/product/:sku', (req, res) => {
         req.log.error('database not available');
         res.status(500).send('database not available');
     }
+    parentSpan.end();
 });
 
 // products in a category

@@ -23,6 +23,36 @@ const counter = new promClient.Counter({
     registers: [register]
 });
 
+//----------------------------------------------------------------------------------------
+
+const opentelemetry = require('@opentelemetry/api');
+const { Resource } = require('@opentelemetry/resources');
+const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
+const { NodeTracerProvider } = require('@opentelemetry/sdk-trace-node');
+const { SimpleSpanProcessor } = require('@opentelemetry/sdk-trace-base');
+const { CollectorTraceExporter } = require('@opentelemetry/exporter-collector-grpc');
+
+// Initialize the tracer provider
+const provider = new NodeTracerProvider({
+    resource: new Resource({
+        [SemanticResourceAttributes.SERVICE_NAME]: 'cart-service',
+    }),
+});
+
+// Configure the exporter to send spans to the OpenTelemetry Collector over gRPC
+const exporter = new CollectorTraceExporter({
+    serviceName: 'cart-service',
+    url: 'otel-collector.badhansaha.tech:4317', // Replace with your collector's address
+});
+provider.addSpanProcessor(new SimpleSpanProcessor(exporter));
+
+// Register the provider
+provider.register();
+
+// Get tracer instance
+const tracer = opentelemetry.trace.getTracer('cart-trace');
+
+//------------------------------------------------------------------------------------------
 
 var redisConnected = false;
 
@@ -82,6 +112,7 @@ app.get('/metrics', (req, res) => {
 
 // get cart with id
 app.get('/cart/:id', (req, res) => {
+    const parentSpan = tracer.startSpan('cart-list');
     redisClient.get(req.params.id, (err, data) => {
         if(err) {
             req.log.error('ERROR', err);
@@ -94,6 +125,7 @@ app.get('/cart/:id', (req, res) => {
                 res.send(data);
             }
         }
+        parentSpan.end();
     });
 });
 
@@ -404,4 +436,5 @@ const port = process.env.CART_SERVER_PORT || '8080';
 app.listen(port, () => {
     logger.info('Started on port', port);
 });
+
 
