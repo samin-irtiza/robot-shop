@@ -149,6 +149,8 @@ services:
         - ${REPO}/rs-payment:${TAG}
     depends_on:
       - rabbitmq
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_GRPC}
     networks:
       - robot-shop
     healthcheck:
