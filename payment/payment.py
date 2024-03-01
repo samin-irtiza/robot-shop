@@ -1,5 +1,4 @@
 import random
-
 import instana
 import os
 import sys
@@ -9,17 +8,36 @@ import uuid
 import json
 import requests
 import traceback
-from flask import Flask
-from flask import Response
-from flask import request
-from flask import jsonify
+from flask import Flask, Response, request, jsonify
 from rabbitmq import Publisher
+
 # Prometheus
 import prometheus_client
 from prometheus_client import Counter, Histogram
 
+# OpenTelemetry imports
+from opentelemetry import trace
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+# Set up Flask app
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
+
+# Set up OpenTelemetry instrumentation
+resource = Resource.create(attributes={"service.name": "payment-service"})
+tracer_provider = TracerProvider(resource=resource)
+trace.set_tracer_provider(tracer_provider)
+tracer = trace.get_tracer(__name__)
+otlp_endpoint = "188.166.228.53:4317"
+otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
+span_processor = SimpleSpanProcessor(otlp_exporter)
+tracer_provider.add_span_processor(span_processor)
+
+FlaskInstrumentor().instrument_app(app)
 
 CART = os.getenv('CART_HOST', 'cart')
 USER = os.getenv('USER_HOST', 'user')
@@ -136,6 +154,7 @@ def queueOrder(order):
 
 
 def countItems(items):
+  with tracer.start_as_current_span("count-items"):
     count = 0
     for item in items:
         if item.get('sku') != 'SHIP':
@@ -155,3 +174,4 @@ if __name__ == "__main__":
     port = int(os.getenv("SHOP_PAYMENT_PORT", "8080"))
     app.logger.info('Starting on port {}'.format(port))
     app.run(host='0.0.0.0', port=port)
+
