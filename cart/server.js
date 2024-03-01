@@ -6,6 +6,8 @@ instana({
         enabled: true
     }
 });
+const api = require('@opentelemetry/api');
+const tracer = require('./tracer')(('cart'));
 
 const redis = require('redis');
 const request = require('request');
@@ -66,11 +68,16 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 app.get('/health', (req, res) => {
+    const span = tracer.startSpan('Health Check', {
+        kind: 1, // server
+        attributes: { id: req.params.id },
+      });
     var stat = {
         app: 'OK',
         redis: redisConnected
     };
     res.json(stat);
+    span.end();
 });
 
 // Prometheus
@@ -82,6 +89,13 @@ app.get('/metrics', (req, res) => {
 
 // get cart with id
 app.get('/cart/:id', (req, res) => {
+    // const currentSpan = api.trace.getSpan(api.context.active());
+    // console.log(`traceid: ${currentSpan.spanContext().traceId}`);
+    const span = tracer.startSpan('Get Cart ID', {
+        kind: 1, // server
+        attributes: { id: req.params.id },
+      });
+    span.addEvent(`Getting cart with ID to ${req.params.id}`);
     redisClient.get(req.params.id, (err, data) => {
         if(err) {
             req.log.error('ERROR', err);
@@ -95,6 +109,7 @@ app.get('/cart/:id', (req, res) => {
             }
         }
     });
+    span.end();
 });
 
 // delete cart with id

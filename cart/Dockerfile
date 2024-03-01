@@ -17,6 +17,6 @@ COPY package.json /opt/server/
 
 RUN npm install
 
-COPY server.js /opt/server/
+COPY . /opt/server/
 
 CMD ["node", "--require", "@opentelemetry/auto-instrumentations-node/register", "server.js"]
