@@ -7,59 +7,40 @@ services:
       tags: 
         - ${REPO}/rs-mongodb:${TAG}
     networks:
-      - robot-shop
-    logging: &logging
-      driver: "json-file"
-      options:
-        max-size: "25m"
-        max-file: "2"
+      - app-zone
   redis:
     image: redis:6.2-alpine
     networks:
-      - robot-shop
-    logging:
-      <<: *logging
+      - app-zone
   rabbitmq:
     image: rabbitmq:3.8-management-alpine
     networks:
-      - robot-shop
-    logging:
-      <<: *logging
+      - app-zone
   catalogue:
     build:
       context: catalogue
       dockerfile: Dockerfile
       tags: 
         - ${REPO}/rs-catalogue:${TAG}
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_GRPC}
     depends_on:
       - mongodb
     networks:
-      - robot-shop
-    healthcheck:
-      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health" ]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-    logging:
-      <<: *logging
+      - app-zone
   user:
     build:
       context: user
       dockerfile: Dockerfile
       tags: 
         - ${REPO}/rs-user:${TAG}
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_GRPC}
     depends_on:
       - mongodb
       - redis
     networks:
-      - robot-shop
-    healthcheck:
-      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health" ]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-    logging:
-      <<: *logging
+      - app-zone
   cart:
     build:
       context: cart
@@ -72,14 +53,7 @@ services:
     depends_on:
       - redis
     networks:
-      - robot-shop
-    healthcheck:
-      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health" ]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-    logging:
-      <<: *logging
+      - app-zone
   mysql:
     build:
       context: mysql
@@ -89,9 +63,7 @@ services:
     cap_add:
       - NET_ADMIN
     networks:
-      - robot-shop
-    logging:
-      <<: *logging
+      - app-zone
   shipping:
     build:
       context: shipping
@@ -110,16 +82,8 @@ services:
       #- OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14250
     depends_on:
       - mysql
-      - jaeger
     networks:
-      - robot-shop
-    healthcheck:
-      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-    logging:
-      <<: *logging
+      - app-zone
 
   ratings:
     build:
@@ -130,16 +94,9 @@ services:
     environment:
       APP_ENV: prod
     networks:
-      - robot-shop
+      - app-zone
     depends_on:
       - mysql
-    healthcheck:
-      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost/_health"]
-      interval: 10s
-      timeout: 10s
-      retries: 3
-    logging:
-      <<: *logging
 
   payment:
     build:
@@ -152,17 +109,10 @@ services:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_COLLECTOR_HOST}:${OTEL_COLLECTOR_PORT_GRPC}
     networks:
-      - robot-shop
-    healthcheck:
-      test: ["CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 3
+      - app-zone
     # Uncomment to change payment gateway
     #environment:
       #PAYMENT_GATEWAY: "https://www.worldpay.com"
-    logging:
-      <<: *logging
   dispatch:
     build:
       context: dispatch
@@ -172,9 +122,7 @@ services:
     depends_on:
       - rabbitmq
     networks:
-      - robot-shop
-    logging:
-      <<: *logging
+      - app-zone
   web:
     build:
       context: web
@@ -192,110 +140,103 @@ services:
     ports:
       - "8080:8080"
     networks:
-      - robot-shop
-    healthcheck:
-      test: [ "CMD", "curl", "-H", "X-INSTANA-SYNTHETIC: 1", "-f", "http://localhost:8080/" ]
-      interval: 10s
-      timeout: 10s
-      retries: 3
+      - app-zone
     # Uncomment to enable Instana EUM
     # environment:
       # INSTANA_EUM_KEY: <your eum key>
       # INSTANA_EUM_REPORTING_URL: <your reporting url>
-    logging:
-      <<: *logging
   # --------------------------------------------------------- MONITORING TOOLS ---------------------------------------------------------------------
-  prometheus:
-    image: ${PROMETHEUS_IMAGE}
-    container_name: prometheus
-    command:
-      - --web.console.templates=/etc/prometheus/consoles
-      - --web.console.libraries=/etc/prometheus/console_libraries
-      - --storage.tsdb.retention.time=1h
-      - --config.file=/etc/prometheus/prometheus-config.yaml
-      - --storage.tsdb.path=/prometheus
-      - --web.enable-lifecycle
-      - --web.route-prefix=/
-      - --enable-feature=exemplar-storage
-      - --enable-feature=otlp-write-receiver
-    volumes:
-      - ./prometheus/prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
-    deploy:
-      resources:
-        limits:
-          memory: 300M
-    restart: unless-stopped
-    ports:
-      - "${PROMETHEUS_SERVICE_PORT}:${PROMETHEUS_SERVICE_PORT}"
-    networks:
-      - robot-shop
-    logging: *logging
-
-  jaeger:
-    image: ${JAEGERTRACING_IMAGE}
-    container_name: jaeger
-    command:
-      - "--memory.max-traces=5000"
-      - "--query.base-path=/jaeger/ui"
- #     - "--prometheus.server-url=http://${PROMETHEUS_ADDR}"
- #     - "--prometheus.query.normalize-calls=true"
- #     - "--prometheus.query.normalize-duration=true"
-    deploy:
-      resources:
-        limits:
-          memory: 300M
-    restart: unless-stopped
-    networks:
-      - robot-shop
-    ports:
-      - "${JAEGER_SERVICE_PORT}"         # Jaeger UI
-      - "${OTEL_COLLECTOR_PORT_GRPC}"
-        #    environment:
-        #      - METRICS_STORAGE_TYPE=prometheus
-    logging: *logging
-  otelcol:
-    image: ${COLLECTOR_CONTRIB_IMAGE}
-    container_name: otelcol
-    hostname: otelcol
-    deploy:
-      resources:
-        limits:
-          memory: 125M
-    restart: unless-stopped
-    command: [ "--config=/etc/otelcol-config.yml", "--config=/etc/otelcol-config-extras.yml" ]
-    volumes:
-      - ./otelcollector/otelcol-config.yml:/etc/otelcol-config.yml
-      - ./otelcollector/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
-    ports:
-      - "${OTEL_COLLECTOR_PORT_GRPC}"
-      - "${OTEL_COLLECTOR_PORT_HTTP}"
-    depends_on:
-      - jaeger
-    logging: *logging
-    environment:
-      - ENVOY_PORT
-    networks:
-      - robot-shop
-
-  grafana:
-    image: ${GRAFANA_IMAGE}
-    container_name: grafana
-    deploy:
-      resources:
-        limits:
-          memory: 100M
-    restart: unless-stopped
-    environment:
-      - "GF_INSTALL_PLUGINS=grafana-opensearch-datasource"
-    volumes:
-      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
-      - ./grafana/provisioning/:/etc/grafana/provisioning/
-    ports:
-      - "${GRAFANA_SERVICE_PORT}:${GRAFANA_SERVICE_PORT}"
-    logging: *logging
-    networks:
-      - robot-shop
+#  prometheus:
+#    image: ${PROMETHEUS_IMAGE}
+#    container_name: prometheus
+#    command:
+#      - --web.console.templates=/etc/prometheus/consoles
+#      - --web.console.libraries=/etc/prometheus/console_libraries
+#      - --storage.tsdb.retention.time=1h
+#      - --config.file=/etc/prometheus/prometheus-config.yaml
+#      - --storage.tsdb.path=/prometheus
+#      - --web.enable-lifecycle
+#      - --web.route-prefix=/
+#      - --enable-feature=exemplar-storage
+#      - --enable-feature=otlp-write-receiver
+#    volumes:
+#      - ./prometheus/prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 300M
+#    restart: unless-stopped
+#    ports:
+#      - "${PROMETHEUS_SERVICE_PORT}:${PROMETHEUS_SERVICE_PORT}"
+#    networks:
+#      - app-zone
+#    logging: *logging
+#
+#  jaeger:
+#    image: ${JAEGERTRACING_IMAGE}
+#    container_name: jaeger
+#    command:
+#      - "--memory.max-traces=5000"
+#      - "--query.base-path=/jaeger/ui"
+# #     - "--prometheus.server-url=http://${PROMETHEUS_ADDR}"
+# #     - "--prometheus.query.normalize-calls=true"
+# #     - "--prometheus.query.normalize-duration=true"
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 300M
+#    restart: unless-stopped
+#    networks:
+#      - app-zone
+#    ports:
+#      - "${JAEGER_SERVICE_PORT}"         # Jaeger UI
+#      - "${OTEL_COLLECTOR_PORT_GRPC}"
+#        #    environment:
+#        #      - METRICS_STORAGE_TYPE=prometheus
+#    logging: *logging
+#  otelcol:
+#    image: ${COLLECTOR_CONTRIB_IMAGE}
+#    container_name: otelcol
+#    hostname: otelcol
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 125M
+#    restart: unless-stopped
+#    command: [ "--config=/etc/otelcol-config.yml", "--config=/etc/otelcol-config-extras.yml" ]
+#    volumes:
+#      - ./otelcollector/otelcol-config.yml:/etc/otelcol-config.yml
+#      - ./otelcollector/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
+#    ports:
+#      - "${OTEL_COLLECTOR_PORT_GRPC}"
+#      - "${OTEL_COLLECTOR_PORT_HTTP}"
+#    depends_on:
+#      - jaeger
+#    logging: *logging
+#    environment:
+#      - ENVOY_PORT
+#    networks:
+#      - app-zone
+#
+#  grafana:
+#    image: ${GRAFANA_IMAGE}
+#    container_name: grafana
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 100M
+#    restart: unless-stopped
+#    environment:
+#      - "GF_INSTALL_PLUGINS=grafana-opensearch-datasource"
+#    volumes:
+#      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+#      - ./grafana/provisioning/:/etc/grafana/provisioning/
+#    ports:
+#      - "${GRAFANA_SERVICE_PORT}:${GRAFANA_SERVICE_PORT}"
+#    logging: *logging
+#    networks:
+#      - app-zone
 
 networks:
-  robot-shop:
+  app-zone:
 
