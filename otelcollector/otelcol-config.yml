@@ -13,6 +13,28 @@ receivers:
   httpcheck/frontendproxy:
     targets:
       - endpoint: http://robot-shop-web-1:${env:ENVOY_PORT}
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: rabbitmq
+          scrape_interval: 1s
+          static_configs:
+            - targets: [rabbitmq:15692]
+        - job_name: redis-exporter
+          scrape_interval: 1s
+          static_configs:
+            - targets: [redis-exporter:9121]
+        - job_name: mongodb-exporter
+          scrape_interval: 1s
+          static_configs:
+            - targets: [mongodb-exporter:9216]
+  mongodb:
+    hosts:
+      endpoint: "mongodb://mongo-database:27017"
+    tls:
+      insecure: true
+      insecure_skip_verify: true
+          
 
 exporters:
   debug:
@@ -20,16 +42,10 @@ exporters:
     endpoint: "jaeger:4317"
     tls:
       insecure: true
-  otlphttp/prometheus:
-    endpoint: "http://prometheus:9090/api/v1/otlp"
-    tls:
-      insecure: true
-  opensearch:
-    logs_index: otel
-    http:
-      endpoint: "http://opensearch:9200"
-      tls:
-        insecure: true
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    resource_to_telemetry_conversion:
+      enabled: true
 
 processors:
   batch:
@@ -44,10 +60,6 @@ service:
       processors: [batch]
       exporters: [otlp, debug, spanmetrics]
     metrics:
-      receivers: [httpcheck/frontendproxy, otlp, spanmetrics]
+      receivers: [httpcheck/frontendproxy, otlp, spanmetrics,prometheus,mongodb]
       processors: [batch]
-      exporters: [otlphttp/prometheus, debug]
-    logs:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [opensearch, debug]
+      exporters: [prometheus, debug]

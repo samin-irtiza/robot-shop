@@ -13,6 +13,7 @@ services:
       - --web.route-prefix=/
       - --enable-feature=exemplar-storage
       - --enable-feature=otlp-write-receiver
+      - --web.enable-remote-write-receiver
     volumes:
       - ./prometheus/prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
     deploy:
@@ -42,34 +43,35 @@ services:
     restart: unless-stopped
     networks:
       - monitoring-zone
-    ports:
-      - "${JAEGER_SERVICE_PORT}:${JAEGER_SERVICE_PORT}"          # Jaeger UI
-        #    environment:
-        #      - METRICS_STORAGE_TYPE=prometheus
+    # ports:
+    #   - "${JAEGER_SERVICE_PORT}:${JAEGER_SERVICE_PORT}"          # Jaeger UI
+    #   - "${OTEL_COLLECTOR_PORT_GRPC}:${OTEL_COLLECTOR_PORT_GRPC}"
+    #     #    environment:
+    #     #      - METRICS_STORAGE_TYPE=prometheus
 
-  otelcol:
-    image: ${COLLECTOR_CONTRIB_IMAGE}
-    container_name: otelcol
-    hostname: otelcol
-    deploy:
-      resources:
-        limits:
-          memory: 125M
-    restart: unless-stopped
-    command: [ "--config=/etc/otelcol-config.yml", "--config=/etc/otelcol-config-extras.yml" ]
-    volumes:
-      - ./otelcollector/otelcol-config.yml:/etc/otelcol-config.yml
-      - ./otelcollector/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
-    ports:
-      - "${OTEL_COLLECTOR_PORT_GRPC}:${OTEL_COLLECTOR_PORT_GRPC}"
-      - "${OTEL_COLLECTOR_PORT_HTTP}:${OTEL_COLLECTOR_PORT_HTTP}"
-    depends_on:
-      - jaeger
-
-    environment:
-      - ENVOY_PORT
-    networks:
-      - monitoring-zone
+#  otelcol:
+#    image: ${COLLECTOR_CONTRIB_IMAGE}
+#    container_name: otelcol
+#    hostname: otelcol
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 125M
+#    restart: unless-stopped
+#    command: [ "--config=/etc/otelcol-config.yml", "--config=/etc/otelcol-config-extras.yml" ]
+#    volumes:
+#      - ./otelcollector/otelcol-config.yml:/etc/otelcol-config.yml
+#      - ./otelcollector/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
+#    ports:
+#      - "${OTEL_COLLECTOR_PORT_GRPC}:${OTEL_COLLECTOR_PORT_GRPC}"
+#      - "${OTEL_COLLECTOR_PORT_HTTP}:${OTEL_COLLECTOR_PORT_HTTP}"
+#    depends_on:
+#      - jaeger
+#
+#    environment:
+#      - ENVOY_PORT
+#    networks:
+#      - monitoring-zone
 
   grafana:
     image: ${GRAFANA_IMAGE}
