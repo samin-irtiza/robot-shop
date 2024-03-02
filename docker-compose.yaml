@@ -7,6 +7,7 @@ services:
       tags: 
         - ${REPO}/rs-mongodb:${TAG}
     container_name: mongo-database
+    hostname: mongo-database
     networks:
       - app-zone
   redis:
