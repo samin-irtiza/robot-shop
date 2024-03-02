@@ -43,8 +43,8 @@ services:
     restart: unless-stopped
     networks:
       - monitoring-zone
-    # ports:
-    #   - "${JAEGER_SERVICE_PORT}:${JAEGER_SERVICE_PORT}"          # Jaeger UI
+    ports:
+      - "${JAEGER_SERVICE_PORT}:${JAEGER_SERVICE_PORT}"          # Jaeger UI
     #   - "${OTEL_COLLECTOR_PORT_GRPC}:${OTEL_COLLECTOR_PORT_GRPC}"
     #     #    environment:
     #     #      - METRICS_STORAGE_TYPE=prometheus
